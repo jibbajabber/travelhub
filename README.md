@@ -125,12 +125,6 @@ destinations:
 
 ## 🔑 Environment Variables
 
-Copy `env.example` to `.env` and fill in the values you have:
-
-```bash
-cp env.example .env
-```
-
 | Variable | Required | Description |
 |---|---|---|
 | `NATIONAL_RAIL_TOKEN` | Optional | Darwin/OpenLDBWS token from [National Rail Enquiries](https://realtime.nationalrail.co.uk/OpenLDBWSRegistration/). If not set, the scraping fallback is used |
@@ -144,7 +138,6 @@ cp env.example .env
 
 ### Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed
-- A `.env` file with your API keys (see above)
 
 ### Build and Start
 
@@ -153,9 +146,7 @@ cp env.example .env
 git clone <your-repo-url> travel-hub
 cd travel-hub
 
-# Set up environment variables
-cp env.example .env
-# Edit .env with your preferred editor and add your keys
+# Export any API environment variables
 
 # Set up journey configurations
 cp config/roads.example.yaml config/roads.yaml
