@@ -1,0 +1,19 @@
+homeStation:
+  name: "London St Pancras International"
+  crs: "STP"
+
+# Engineering works will look for disruptions affecting this operator
+operatorCodes: 
+  - "TL" # Thameslink
+#  - "LE" # Greater Anglia
+#  - "XR" # Elizabeth Line
+#  - "LO" # London Overground
+#  - "LT" # London Underground (Tube)
+
+destinations:
+  - id: "stalbans"
+    name: "St Albans"
+  - id: "flitwick"
+    name: "Flitwick"
+  - id: "bedford"
+    name: "Bedford"

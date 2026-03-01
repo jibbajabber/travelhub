@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NATIONAL_RAIL_TOKEN=${NATIONAL_RAIL_TOKEN}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+    volumes:
+      - ./config/roads.yaml:/app/config/roads.yaml:ro
+      - ./config/rail.yaml:/app/config/rail.yaml:ro
+    restart: always

@@ -1,0 +1,10 @@
+journeys:
+  - id: destination_one
+    destinationName: Gym
+    origin: "Kings Cross, Euston Rd, London N19AL"
+    destination: "Anytime Fitness, Unit 2, Nido Building, 200 Pentonville Rd, London N19JP"
+
+  - id: destination_two
+    destinationName: Work
+    origin: "Kings Cross, Euston Rd, London N19AL"
+    destination: "23 Exmouth Market, London EC1R4QL"
