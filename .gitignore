@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+dev_scratchpad/
+config/*.yaml
+!config/roads.example.yaml
+!config/rail.example.yaml
