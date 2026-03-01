@@ -9,7 +9,7 @@ Live road traffic is provided by Google Maps Distance Matrix API. You will need 
 
 Live rail departures are provided by National Rail when a token is provided via the environment variable `NATIONAL_RAIL_TOKEN`, however this isn't required as the the app will fall back to web scraping.
 
-This project has been with Antigravity and is a work inprogress
+**Current Status:** This project has been built with Antigravity and is a work inprogress
 
 ---
 
