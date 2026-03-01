@@ -11,6 +11,9 @@ Live rail departures are provided by National Rail when a token is provided via 
 
 **Current Status:** This project has been built with Antigravity and is a work inprogress
 
+![Frontend Preview](static/example_frontend.png)
+
+
 ---
 
 ## ✨ Features
