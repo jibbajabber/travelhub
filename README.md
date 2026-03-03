@@ -20,7 +20,7 @@ Live rail departures are provided by National Rail when a token is provided via 
 
 | Feature | Detail |
 |---|---|
-| 🚂 **Live Rail Departures** | Real-time train times scraped from National Rail, grouped per destination. Shows best-arriving and next train, ETA, platform, status, and calling points |
+| 🚂 **Live Rail Departures** | Real-time train times from the National Rail [Rail Data Marketplace](https://raildata.org.uk) JSON API, grouped per destination. Shows best-arriving and next train, ETA, platform, status, and calling points. Falls back to web scraping if no API token is set |
 | 🚗 **Live Road Travel** | Google Maps Distance Matrix API — live travel time and traffic status per route in miles |
 | 🛠️ **Engineering Works** | Planned disruptions for your configured train operator(s) scraped from National Rail |
 | 📱 **Send to Device** | QR code modal + copy-link button to easily open a route on your phone |
@@ -57,9 +57,13 @@ travel-hub/
 │   ├── rail.yaml                # Your personal rail routes (gitignored)
 │   └── roads.yaml               # Your personal road routes (gitignored)
 │
-├── dev_scratchpad/              # Raw National Rail JSON/HTML snapshots captured during
-│                                # development to understand the scraping data structure.
-│                                # Not used at runtime — safe to delete
+├── docs/
+│   ├── LDBWS Documentation.pdf  # Subscriber documentation for the National Rail LDBWS JSON API
+│   └── raildata-api-examples.md # Example curl commands with authentication for the RDM API
+│
+├── swagger/
+│   └── ldbws-swagger-json.txt   # OpenAPI 2.0 (Swagger) spec for the LDBWS JSON API
+│
 ```
 
 ### Key Files in Detail
@@ -80,7 +84,7 @@ Thin HTTP client layer (using `axios`) that calls the Express backend:
 
 #### `server.ts`
 Express server that acts as a secure backend proxy. Handles:
-- **`GET /api/rail/departures`** — Scrapes National Rail's live departures page using `cheerio` (HTML parser). Falls back gracefully to the official SOAP API if a `NATIONAL_RAIL_TOKEN` is configured. Calls a National Rail GraphQL endpoint to fetch actual calling points per service
+- **`GET /api/rail/departures`** — Fetches live departures primarily from the National Rail [Rail Data Marketplace](https://raildata.org.uk) **JSON API** (`api1.raildata.org.uk`) using `NATIONAL_RAIL_TOKEN`. Falls back to scraping `nationalrail.co.uk` via `cheerio` if no token is set. The API queries each destination's arrival board filtered by the origin station for accurate results
 - **`GET /api/rail/engineering`** — Scrapes planned disruptions for your configured train operator(s)
 - **`GET /api/road/travel`** — Proxy to the Google Maps Distance Matrix API. Returns travel time, distance (miles), and a derived traffic status. Returns a `_configRequired` flag (rather than an error) if no API key is set, so the UI can degrade gracefully
 
@@ -122,7 +126,10 @@ operatorCodes:
 destinations:
   - id: "liverpool-st"
     name: "Liverpool Street"
+    crs: "LST"            # Required — 3-letter CRS code for the destination station
 ```
+
+> **Note:** The `crs` field on each destination is required for the Rail Data Marketplace API to correctly look up arrivals at that station filtered from your home station. If omitted, rail times will not display.
 
 ---
 
@@ -130,7 +137,7 @@ destinations:
 
 | Variable | Required | Description |
 |---|---|---|
-| `NATIONAL_RAIL_TOKEN` | Optional | Darwin/OpenLDBWS token from [National Rail Enquiries](https://realtime.nationalrail.co.uk/OpenLDBWSRegistration/). If not set, the scraping fallback is used |
+| `NATIONAL_RAIL_TOKEN` | Optional | API key from [Rail Data Marketplace](https://raildata.org.uk). Subscribe to the **"Live Arrival and Departure Boards (Arr and Dep)"** product, then find the key in the subscriber under **"Specificiation"**. Used as the `x-apikey` header. Without this, the app falls back to web scraping. See [docs/raildata-api-examples.md](docs/raildata-api-examples.md) for an example |
 | `GOOGLE_MAPS_API_KEY` | Optional | A Google Cloud API key with the **Distance Matrix API** enabled. If not set, road travel data is unavailable but the app still works |
 
 > **Note:** The application works fully without any keys. Rail times use web scraping as the default. Road travel shows a clear "API key not configured" message when the Google Maps key is absent.
