@@ -48,42 +48,32 @@ export async function getLiveRoadTravel(journeys: { id: string, origin: string, 
   }
 }
 
-export async function getLiveRailDepartures(origin: string, destinations: string[]): Promise<Record<string, TrainDeparture[]>> {
+export async function getLiveRailDepartures(origin: string, destinations: { name: string, crs: string }[]): Promise<Record<string, TrainDeparture[]>> {
   try {
     // We'll make one call to get all departures from the origin
     const response = await axios.get("/api/rail/departures", {
       params: {
         crs: origin,
-        destinations: destinations.join(",")
+        destinations: destinations.map(d => d.name).join(","),
+        destCrs: destinations.map(d => d.crs).join(",")
       }
     });
 
     const data = response.data.departures;
 
-    // If data is an object (not an array), it's already grouped by the backend scraper
+    // The backend now returns an object grouped by destination query
     if (data && typeof data === 'object' && !Array.isArray(data)) {
-      return data;
+      const results: Record<string, TrainDeparture[]> = {};
+      destinations.forEach(dest => {
+        // The API maps exactly to the destination string we passed in
+        const cleanKey = Object.keys(data).find(k => k.toLowerCase() === dest.name.toLowerCase());
+        results[dest.name] = cleanKey ? data[cleanKey] : [];
+      });
+      return results;
     }
 
-    // Fallback: data is a flat array (from Official API or old scraping logic)
-    const allDepartures = Array.isArray(data) ? data : [];
-    const results: Record<string, TrainDeparture[]> = {};
-
-    destinations.forEach(dest => {
-      // Clean up destination name for matching (e.g. "Bristol (Temple Meads)" -> "bristol")
-      const cleanDest = dest.split('(')[0].trim().toLowerCase();
-
-      results[dest] = allDepartures.filter(dep => {
-        const cleanDepDest = dep.destination.toLowerCase();
-        return cleanDepDest.includes(cleanDest) || cleanDest.includes(cleanDepDest) ||
-          dep.stops.some(stop => {
-            const cleanStop = stop.toLowerCase();
-            return cleanStop.includes(cleanDest) || cleanDest.includes(cleanStop);
-          });
-      });
-    });
-
-    return results;
+    // Fallback: This shouldn't happen with the new REST API but kept for safety
+    return {};
   } catch (error) {
     console.error("Error fetching live rail data from backend:", error);
     throw error;

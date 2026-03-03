@@ -46,8 +46,6 @@ interface RailConfig {
   destinations: { id: string; name: string }[];
 }
 
-const WALK_TIME_MINS = 10;
-
 
 export default function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -68,6 +66,7 @@ export default function App() {
   const [roadConfigMissing, setRoadConfigMissing] = useState(false);
   const [railConfigMissing, setRailConfigMissing] = useState(false);
   const [railConfig, setRailConfig] = useState<RailConfig | null>(null);
+  const [googleMapsKeyMissing, setGoogleMapsKeyMissing] = useState(false);
 
   // Update time every second
   useEffect(() => {
@@ -102,19 +101,13 @@ export default function App() {
 
         if (!isMissingRailConfig && initialRailConfig) {
           // Fetch Rail Data
-          const destNames = initialRailConfig.destinations.map((d: any) => d.name);
-          const liveRail = await getLiveRailDepartures(initialRailConfig.homeStation.crs, destNames);
+          const dests = initialRailConfig.destinations.map((d: any) => ({ name: d.name, crs: d.crs }));
+          const liveRail = await getLiveRailDepartures(initialRailConfig.homeStation.crs, dests);
 
           const mappedRail: Record<string, TravelDeparture[]> = {};
           initialRailConfig.destinations.forEach((dest: any) => {
-            const exactKey = Object.keys(liveRail).find(k => k === dest.name);
-            const looseKey = exactKey || Object.keys(liveRail).find(k => k.toLowerCase().includes(dest.name.toLowerCase().split(' ')[0]));
-
-            if (looseKey && liveRail[looseKey]) {
-              mappedRail[dest.id] = liveRail[looseKey];
-            } else {
-              mappedRail[dest.id] = [];
-            }
+            // The travelService now returns exact keys matching dest.name
+            mappedRail[dest.id] = liveRail[dest.name] || [];
           });
           setRailData(mappedRail);
           setRailLastUpdated(new Date());
@@ -160,11 +153,19 @@ export default function App() {
         // Fetch Road (Only during active window)
         const hours = new Date().getHours();
         if (hours >= 6 && hours < 24 && !isMissingConfig) {
-          const journeyParams = initialJourneys.map(j => ({ id: j.id, origin: j.origin, destination: j.destination }));
-          if (journeyParams.length > 0) {
-            const liveRoad = await getLiveRoadTravel(journeyParams);
-            setRoadData(liveRoad);
-            setRoadLastUpdated(new Date());
+          try {
+            const journeyParams = initialJourneys.map(j => ({ id: j.id, origin: j.origin, destination: j.destination }));
+            if (journeyParams.length > 0) {
+              const liveRoad = await getLiveRoadTravel(journeyParams);
+              setRoadData(liveRoad);
+              setRoadLastUpdated(new Date());
+            }
+          } catch (e: any) {
+            console.error("Failed to fetch road travel data", e);
+            if (e?.message === 'GOOGLE_MAPS_API_KEY not configured') {
+              setGoogleMapsKeyMissing(true);
+            }
+            // We don't set global apiError here so rail can still work
           }
         }
 
@@ -183,8 +184,8 @@ export default function App() {
   const refreshRailData = async () => {
     if (!railConfig) return false;
     try {
-      const destNames = railConfig.destinations.map(d => d.name);
-      const liveRail = await getLiveRailDepartures(railConfig.homeStation.crs, destNames);
+      const dests = railConfig.destinations.map(d => ({ name: d.name, crs: (d as any).crs }));
+      const liveRail = await getLiveRailDepartures(railConfig.homeStation.crs, dests);
 
       const mappedRail: Record<string, TravelDeparture[]> = {};
       railConfig.destinations.forEach(dest => {
@@ -224,9 +225,13 @@ export default function App() {
       const liveRoad = await getLiveRoadTravel(journeyParams);
       setRoadData(liveRoad);
       setRoadLastUpdated(new Date());
+      setGoogleMapsKeyMissing(false);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Road refresh failed", error);
+      if (error?.message === 'GOOGLE_MAPS_API_KEY not configured') {
+        setGoogleMapsKeyMissing(true);
+      }
       return false;
     }
   };
@@ -321,6 +326,31 @@ export default function App() {
               <div className="text-xs opacity-80 hidden sm:block">
                 Required: GOOGLE_MAPS_API_KEY (Rail is currently using Web Scraping fallback)
               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Google Maps Key Missing Banner */}
+      <AnimatePresence>
+        {googleMapsKeyMissing && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-amber-500 text-white overflow-hidden"
+          >
+            <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <AlertCircle size={18} />
+                <span>Road travel data unavailable — <code className="bg-amber-600 px-1 rounded text-xs">GOOGLE_MAPS_API_KEY</code> is not configured.</span>
+              </div>
+              <button
+                onClick={() => setGoogleMapsKeyMissing(false)}
+                className="text-white/80 hover:text-white text-xs underline shrink-0"
+              >
+                Dismiss
+              </button>
             </div>
           </motion.div>
         )}
@@ -592,7 +622,7 @@ export default function App() {
               </button>
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                Source: National Rail Live
+                Source: National Rail Live {railConfig && `(>${railConfig.walkTimeMins || 10}m walk)`}
               </div>
             </div>
           </div>
@@ -625,9 +655,13 @@ export default function App() {
                 const rawDepartures = railData[dest.id] || [];
                 const isSelected = selectedRailDest === dest.id;
 
-                // Filter for reachable trains (current time + 10 mins)
+                // Filter for reachable trains (current time + 5 mins)
                 const reachableDepartures = rawDepartures.filter(train => {
+                  if (!train.time || !train.time.includes(':')) return true; // Don't filter out if time format is unexpected
+
                   const [hours, minutes] = train.time.split(':').map(Number);
+                  if (isNaN(hours) || isNaN(minutes)) return true;
+
                   const trainDate = new Date(currentTime);
                   trainDate.setHours(hours, minutes, 0, 0);
 
@@ -636,7 +670,7 @@ export default function App() {
                     trainDate.setDate(trainDate.getDate() + 1);
                   }
 
-                  const limitDate = new Date(currentTime.getTime() + WALK_TIME_MINS * 60 * 1000);
+                  const limitDate = new Date(currentTime.getTime() + (railConfig?.walkTimeMins || 10) * 60 * 1000);
                   return trainDate >= limitDate;
                 });
 

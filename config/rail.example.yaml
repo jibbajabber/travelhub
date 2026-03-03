@@ -15,7 +15,12 @@ operatorCodes:
 destinations:
   - id: "stalbans"
     name: "St Albans"
+    crs: "SAC"
   - id: "flitwick"
     name: "Flitwick"
+    crs: "FLT"
   - id: "bedford"
     name: "Bedford"
+    crs: "BDM"
+
+walkTimeMins: 10
