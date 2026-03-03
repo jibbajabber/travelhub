@@ -46,8 +46,6 @@ interface RailConfig {
   destinations: { id: string; name: string }[];
 }
 
-const WALK_TIME_MINS = 5;
-
 
 export default function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
