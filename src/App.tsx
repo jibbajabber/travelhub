@@ -695,11 +695,25 @@ export default function App() {
                 // Use reachable departures for all following logic
                 const departures = reachableDepartures;
 
+                const getTrueTime = (timeStr: string) => {
+                  if (!timeStr || !timeStr.includes(':')) return Infinity;
+                  const [hours, minutes] = timeStr.split(':').map(Number);
+                  if (isNaN(hours) || isNaN(minutes)) return Infinity;
+                  const d = new Date(currentTime);
+                  d.setHours(hours, minutes, 0, 0);
+                  if (d.getTime() < currentTime.getTime() - 12 * 60 * 60 * 1000) {
+                    d.setDate(d.getDate() + 1);
+                  } else if (d.getTime() > currentTime.getTime() + 12 * 60 * 60 * 1000) {
+                    d.setDate(d.getDate() - 1);
+                  }
+                  return d.getTime();
+                };
+
                 // Find fastest arrival
                 const sortedByDuration = [...departures].sort((a, b) => a.duration - b.duration);
                 const fastestId = sortedByDuration[0]?.id;
 
-                const sortedByArrival = [...departures].sort((a, b) => (a.eta || '').localeCompare(b.eta || ''));
+                const sortedByArrival = [...departures].sort((a, b) => getTrueTime(a.eta) - getTrueTime(b.eta));
                 const soonestId = sortedByArrival[0]?.id;
 
                 const slowestId = sortedByDuration[sortedByDuration.length - 1]?.id;
