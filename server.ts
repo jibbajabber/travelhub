@@ -23,17 +23,17 @@ const parser = new XMLParser({
 });
 
 // --- Rail Scraping Fallback ---
-async function scrapeRailDepartures(crs: string, destination?: string) {
+async function scrapeRailDepartures(crs: string, destination?: string, destCrs?: string) {
   try {
     const stationCode = (crs || 'SNF').toUpperCase().substring(0, 3);
-    let url = `https://www.nationalrail.co.uk/live-trains/departures/${stationCode}/`;
+    const destCode = destCrs ? destCrs.toUpperCase().substring(0, 3) : null;
 
-    // If a destination is provided, use the point-to-point URL for better accuracy.
-    // National Rail generally works with lowercased hyphenated station names if CRS isn't provided here
-    if (destination) {
-      let destSlug = destination.toLowerCase().replace(/\s+/g, '-').replace(/\(|\)/g, '');
-      url += `${destSlug}/`;
-    }
+    // We use National Rail's native destination filtering in the URL path.
+    // By passing destCode to the departures URL, we bypass the 10-row limit 
+    // on busy stations and offload all destination filtering to National Rail natively.
+    const url = destCode
+      ? `https://www.nationalrail.co.uk/live-trains/departures/${stationCode}/${destCode}/`
+      : `https://www.nationalrail.co.uk/live-trains/departures/${stationCode}/`;
 
     const response = await axios.get(url, {
       headers: {
@@ -41,6 +41,7 @@ async function scrapeRailDepartures(crs: string, destination?: string) {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-GB,en;q=0.5',
       },
+      maxRedirects: 5,
       timeout: 10000
     });
 
@@ -53,7 +54,9 @@ async function scrapeRailDepartures(crs: string, destination?: string) {
     }
 
     const nextData = JSON.parse(nextDataScript);
-    const services = nextData.props?.pageProps?.liveTrainsState?.queries?.[0]?.state?.data?.pages?.[0]?.services || [];
+    let services: any[] = nextData.props?.pageProps?.liveTrainsState?.queries?.[0]?.state?.data?.pages?.[0]?.services || [];
+
+    console.log(`[Scrape] ${stationCode} → ${destCode || 'Everywhere'} (Departures): ${services.length} total services from board`);
 
     // Create a helper to fetch calling points via GraphQL
     const fetchCallingPoints = async (rid: string, fromCrs: string, toCrs: string) => {
@@ -101,45 +104,51 @@ async function scrapeRailDepartures(crs: string, destination?: string) {
 
     const departurePromises = services.map(async (s: any) => {
       const depInfo = s.departureInfo || {};
-      const arrivalAtDest = s.journeyDetails?.arrivalInfo || {};
-      const departureTime = depInfo.scheduled ? new Date(depInfo.scheduled).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "N/A";
+      const actualDestArrivalInfo = s.arrivalInfo || {};
+      const arrivalAtDest = s.journeyDetails?.arrivalInfo || actualDestArrivalInfo;
 
-      // Calculate duration in minutes
+      let departureTime = depInfo.scheduled ? new Date(depInfo.scheduled).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "N/A";
+      let eta = arrivalAtDest.scheduled ? new Date(arrivalAtDest.scheduled).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "N/A";
       let duration = 0;
+      let status = "Unknown";
+      let stops: string[] = [];
+
       if (depInfo.scheduled && arrivalAtDest.scheduled) {
         const start = new Date(depInfo.scheduled).getTime();
         const end = new Date(arrivalAtDest.scheduled).getTime();
         duration = Math.round((end - start) / (1000 * 60));
       }
 
-      // Normalize status
       let statusSlug = s.status?.status || "Unknown";
-      let status = "Unknown";
       if (statusSlug === "OnTime") status = "On time";
       else if (statusSlug === "Cancelled") status = "Cancelled";
       else if (statusSlug === "Delayed") status = "Delayed";
       else if (s.status?.delay) status = s.status.delay;
       else status = statusSlug;
 
-      // Calculate ETA (planned arrival time at destination)
-      const eta = arrivalAtDest.scheduled ? new Date(arrivalAtDest.scheduled).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "N/A";
-
-      // Fetch actual calling points if we have an RID and destination
-      let stops: string[] = [];
       if (s.rid && s.destination?.[0]?.crs) {
         stops = await fetchCallingPoints(s.rid, stationCode, s.destination[0].crs);
       }
 
-      // Fallback to stop count if GraphQL fails or no data
-      if (stops.length === 0 && s.journeyDetails?.stops) {
-        stops = new Array(s.journeyDetails.stops).fill("Stop");
+      if (stops.length === 0 && Array.isArray(s.journeyDetails?.stops)) {
+        stops = s.journeyDetails.stops.map((stop: any) =>
+          stop?.stationName || stop?.description || "Unknown stop"
+        ).filter(Boolean);
+      }
+
+      // Filter only if we don't have a destCode (if we have destCode, National Rail pre-filtered it perfectly!)
+      if (destination && !destCode) {
+        const destNameLower = destination.toLowerCase();
+        const termName = (s.destination?.[0]?.locationName || '').toLowerCase();
+        const matchesTerm = termName.includes(destNameLower);
+        const matchesStop = stops.some(st => st.toLowerCase().includes(destNameLower));
+        if (!matchesTerm && !matchesStop) return null;
       }
 
       return {
-        // Use RID-Destination to avoid collisions for the same train on different boards
         id: `${s.rid || Math.random().toString(36).substr(2, 9)}-${destination || 'board'}`,
         time: departureTime,
-        destination: s.destination?.[0]?.locationName || "Unknown",
+        destination: s.destination?.[0]?.locationName || destination || "Unknown",
         status: status,
         platform: s.platform || "TBC",
         duration: duration > 0 ? duration : 0,
@@ -148,7 +157,8 @@ async function scrapeRailDepartures(crs: string, destination?: string) {
       };
     });
 
-    const departures = await Promise.all(departurePromises);
+    const departures = (await Promise.all(departurePromises)).filter((d): d is Exclude<typeof d, null> => d !== null);
+    console.log(`[Scrape] ${stationCode} → ${destination || 'all'}: ${departures.length} services match destination`);
     return departures;
   } catch (error: any) {
     console.error(`Scraping failed for ${crs}:`, error.message);
@@ -438,7 +448,7 @@ app.get("/api/rail/departures", async (req, res) => {
       const destCrs = dest ? (destCrsList[i] || null) : null;
       if (dest) {
         // Provide the destination name, which National Rail accepts as a slug
-        results[dest] = await scrapeRailDepartures(crs, dest);
+        results[dest] = await scrapeRailDepartures(crs, dest, destCrs || undefined);
       } else {
         results["all"] = await scrapeRailDepartures(crs);
       }
