@@ -25,6 +25,24 @@ import { twMerge } from 'tailwind-merge';
 import axios from 'axios';
 import { getLiveRailDepartures, getLiveRoadTravel, type TrainDeparture as TravelDeparture } from './services/travelService';
 
+// Error Boundary — catches render errors and shows the error message instead of a blank white screen
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, fontFamily: 'monospace', background: '#fff', color: '#c00' }}>
+          <h2>Render error — check your browser console</h2>
+          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', color: '#333' }}>{this.state.error.message}{'\n'}{this.state.error.stack}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '8px 16px' }}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -681,7 +699,7 @@ export default function App() {
                 const sortedByDuration = [...departures].sort((a, b) => a.duration - b.duration);
                 const fastestId = sortedByDuration[0]?.id;
 
-                const sortedByArrival = [...departures].sort((a, b) => a.eta.localeCompare(b.eta));
+                const sortedByArrival = [...departures].sort((a, b) => (a.eta || '').localeCompare(b.eta || ''));
                 const soonestId = sortedByArrival[0]?.id;
 
                 const slowestId = sortedByDuration[sortedByDuration.length - 1]?.id;
@@ -819,10 +837,10 @@ export default function App() {
                                 <div className="absolute inset-x-0 -bottom-12 bg-slate-900 text-white p-3 rounded-lg text-xs z-10 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl mx-5">
                                   <div className="font-bold mb-1 uppercase text-[10px] text-slate-400">Calling at:</div>
                                   <div className="flex flex-wrap gap-x-2 gap-y-1">
-                                    {train.stops.map((stop, idx) => (
-                                      <React.Fragment key={stop}>
+                                    {(train.stops || []).map((stop, idx) => (
+                                      <React.Fragment key={`${train.id}-stop-${idx}`}>
                                         <span>{stop}</span>
-                                        {idx < train.stops.length - 1 && <ArrowRight size={10} className="inline mt-0.5" />}
+                                        {idx < (train.stops || []).length - 1 && <ArrowRight size={10} className="inline mt-0.5" />}
                                       </React.Fragment>
                                     ))}
                                   </div>
